@@ -9,6 +9,251 @@ import subprocess
 import threading as th
 from time import sleep
 
+proto_lookup = {
+    'unknown':  0,
+    'ftp_control':  1,
+    'pop3':  2,
+    'smtp':  3,
+    'imap':  4,
+    'dns':  5,
+    'ipp':  6,
+    'http':  7,
+    'mdns':  8,
+    'ntp':  9,
+    'netbios': 10,
+    'nfs': 11,
+    'ssdp': 12,
+    'bgp': 13,
+    'snmp': 14,
+    'xdmcp': 15,
+    'smbv1': 16,
+    'syslog': 17,
+    'dhcp': 18,
+    'postgresql': 19,
+    'mysql': 20,
+    'hotmail': 21,
+    'direct_download_link': 22,
+    'pops': 23,
+    'applejuice': 24,
+    'directconnect': 25,
+    'ntop': 26,
+    'coap': 27,
+    'vmware': 28,
+    'smtps': 29,
+    'facebookzero': 30,
+    'ubntac2': 31,
+    'kontiki': 32,
+    'openft': 33,
+    'fasttrack': 34,
+    'gnutella': 35,
+    'edonkey': 36,
+    'bittorrent': 37,
+    'skypecall': 38,
+    'signal': 39,
+    'memcached': 40,
+    'smbv23': 41,
+    'mining': 42,
+    'nestlogsink': 43,
+    'modbus': 44,
+    # 'free': 45,
+    # 'free': 46,
+    'xbox': 47,
+    'qq': 48,
+    # 'free_49': 49,
+    'rtsp': 50,
+    'imaps': 51,
+    'icecast': 52,
+    'pplive': 53,
+    'ppstream': 54,
+    'zattoo': 55,
+    'shoutcast': 56,
+    'sopcast': 57,
+    'tvants': 58,
+    'tvuplayer': 59,
+    'http_download': 60,
+    'qqlive': 61,
+    'thunder': 62,
+    'soulseek': 63,
+    'ssl_no_cert': 64,
+    'irc': 65,
+    'ayiya': 66,
+    'unencrypted_jabber': 67,
+    'msn': 68,
+    'oscar': 69,
+    'yahoo': 70,
+    'battlefield': 71,
+    'googleplus': 72,
+    'vrrp': 73,
+    'steam': 74,
+    'halflife2': 75,
+    'worldofwarcraft': 76,
+    'telnet': 77,
+    'stun': 78,
+    'ipsec': 79,
+    'gre': 80,
+    'icmp': 81,
+    'igmp': 82,
+    'egp': 83,
+    'sctp': 84,
+    'ospf': 85,
+    'ip_in_ip': 86,
+    'rtp': 87,
+    'rdp': 88,
+    'vnc': 89,
+    'pcanywhere': 90,
+    'ssl': 91,
+    'ssh': 92,
+    'usenet': 93,
+    'mgcp': 94,
+    'iax': 95,
+    'tftp': 96,
+    'afp': 97,
+    'stealthnet': 98,
+    'aimini': 99,
+    'sip':100,
+    'truphone':101,
+    'icmpv6':102,
+    'dhcpv6':103,
+    'armagetron':104,
+    'crossfire':105,
+    'dofus':106,
+    'fiesta':107,
+    'florensia':108,
+    'guildwars':109,
+    'http_activesync':110,
+    'kerberos':111,
+    'ldap':112,
+    'maplestory':113,
+    'mssql-tds':114,
+    'pptp':115,
+    'warcraft3':116,
+    'worldofkungfu':117,
+    'slack':118,
+    'facebook':119,
+    'twitter':120,
+    'dropbox':121,
+    'gmail':122,
+    'googlemaps':123,
+    'youtube':124,
+    'skype':125,
+    'google':126,
+    'dce_rpc':127,
+    'netflow':128,
+    'sflow':129,
+    'http_connect':130,
+    'http_proxy':131,
+    'citrix':132,
+    'netflix':133,
+    'lastfm':134,
+    'waze':135,
+    'youtubeupload':136,
+    'genericprotocol':137,
+    'checkmk':138,
+    'ajp':139,
+    'apple':140,
+    'webex':141,
+    'whatsapp':142,
+    'appleicloud':143,
+    'viber':144,
+    'appleitunes':145,
+    'radius':146,
+    'windowsupdate':147,
+    'teamviewer':148,
+    'tuenti':149,
+    'lotusnotes':150,
+    'sap':151,
+    'gtp':152,
+    'upnp':153,
+    'llmnr':154,
+    'remotescan':155,
+    'spotify':156,
+    'messenger':157,
+    'h323':158,
+    'openvpn':159,
+    'noe':160,
+    'ciscovpn':161,
+    'teamspeak':162,
+    'tor':163,
+    'ciscoskinny':164,
+    'rtcp':165,
+    'rsync':166,
+    'oracle':167,
+    'corba':168,
+    'ubuntuone':169,
+    'whois-das':170,
+    'collectd':171,
+    'socks':172,
+    'nintendo':173,
+    'rtmp':174,
+    'ftp_data':175,
+    'wikipedia':176,
+    'zeromq':177,
+    'amazon':178,
+    'ebay':179,
+    'cnn':180,
+    'megaco':181,
+    'redis':182,
+    'pando_media_booster':183,
+    'vhua':184,
+    'telegram':185,
+    'vevo':186,
+    'pandora':187,
+    'quic':188,
+    'whatsappvoice':189,
+    'eaq':190,
+    'ookla':191,
+    'amqp':192,
+    'kakaotalk':193,
+    'kakaotalk_voice':194,
+    'twitch':195,
+    # 'free':196,
+    'wechat':197,
+    'mpeg_ts':198,
+    'snapchat':199,
+    'sina(weibo)':200,
+    'googlehangout':201,
+    'iflix':202,
+    'github':203,
+    'bjnp':204,
+    # 'free':205,
+    'ppstream':206,
+    'smpp':207,
+    'dnscrypt':208,
+    'tinc':209,
+    'deezer':210,
+    'instagram':211,
+    'microsoft':212,
+    'starcraft':213,
+    'teredo':214,
+    'hotspotshield':215,
+    'hep':216,
+    'googledrive':217,
+    'ocs':218,
+    'office365':219,
+    'cloudflare':220,
+    'ms_onedrive':221,
+    'mqtt':222,
+    'rx':223,
+    'applestore':224,
+    'opendns':225,
+    'git':226,
+    'drda':227,
+    'playstore':228,
+    'someip':229,
+    'fix':230,
+    'playstation':231,
+    'pastebin':232,
+    'linkedin':233,
+    'soundcloud':234,
+    'csgo':235,
+    'lisp':236,
+    'diameter':237,
+    'applepush':238,
+    'googleservices':239,
+    'amazonvideo':240,
+    'googledocs':241,
+    'whatsappfiles':242,
+}
 
 # Regex for IPv4
 rxp_ipv4 = r'(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}' +\
@@ -31,7 +276,7 @@ rxp_ipv6 = r'(?:(?:(?:[0-9A-Fa-f]{1,4}:){6}' +\
 # Regex covering both IPv4 and IPv6 
 rxp_ip = r"({}|{})".format(rxp_ipv4, rxp_ipv6)
 # Regex for protocol field of nDPI
-rxp_proto = r'\[proto: \d+(?:^$|(?:\.\d+)*)/(.*?)\]'
+rxp_proto = r'(?:\[proto: (?:\d+\.)*?(\d+)?/(?:.*?)\])'
 # Full regex
 regex = rxp_ip + r'.*?' + rxp_ip + r'.*?' + rxp_proto
 # Compile for efficiency
@@ -93,6 +338,11 @@ def arg_handler():
         parser.print_help()
     
     if args.interfaces and args.flows and args.duration and args.period:
+        # Convert flow names to nDPI IDs by using the lookup table
+        flow_names = args.flows
+        args.flows = []
+        for flow in flow_names:
+            args.flows.append(proto_lookup[flow.lower()])
         return args
     
     return None
@@ -109,8 +359,23 @@ def dpi_routine(interfaces, duration, period, captures, condition):
             condition.notify()
         sleep(period)
 
-def parse_capture():
-    pass
+def parse_capture(capture, flows, filterIP):
+    blockedIPs = set()
+    groups = re.findall(regex, capture)
+    for group in groups:
+        flowID = int(group[2])
+        if (flowID in flows):
+            ip1 = ip.IPv4Address(group[0])
+            ip2 = ip.IPv4Address(group[1])
+            if filterIP:
+                if ip1.is_global:
+                    blockedIPs.add(ip1)
+                if ip2.is_global:
+                    blockedIPs.add(ip2)
+            else:
+                blockedIPs.add(ip1)
+                blockedIPs.add(ip2)
+    return list(blockedIPs)
 
 def switch_routine(flows, filterIP, captures, condition):
     while True:
@@ -118,44 +383,27 @@ def switch_routine(flows, filterIP, captures, condition):
             condition.wait()
         capture = captures.pop()
         ips = parse_capture(capture, flows, filterIP)
-
-def regex_test():
-    with open('outputv1.txt', 'r') as file:
-        text = file.read()
-        groups = re.findall(regex, text)
-        blockedIPs = []
-        flows = ["Github"]
-        for group in groups:
-            print(group)
-            if (flows[0] in group[2]):
-                ip1 = ip.IPv4Address(group[0])
-                ip2 = ip.IPv4Address(group[1])
-                if ip1.is_global:
-                    blockedIPs.append(ip1)
-                if ip2.is_global:
-                    blockedIPs.append(ip2)
-        # print(blockedIPs)
+        print(ips)
+        # TODO: switch table update to ban IPs
 
 def main():
-    regex_test() # tmp
-    # uid = os.geteuid()
-    # if (uid == 0):
-    #     args = arg_handler()
-    #     if args:
-    #         captures = []
-    #         condition = th.Condition()
-    #         dpi_thread = th.Thread(target=dpi_routine, 
-    #                                args=(args.interfaces, args.duration, args.period, 
-    #                                      captures, condition))
-    #         swi_thread = th.Thread(target=switch_routine, 
-    #                                args=(args.flows, args.filter, captures, condition))
-    #         dpi_thread.start()
-    #         swi_thread.start()
-    #         swi_thread.join()
-    #         dpi_thread.join()
-    # else:
-    #     print("Run the script as root")
-
+    uid = os.geteuid()
+    if (uid == 0):
+        args = arg_handler()
+        if args:
+            captures = []
+            condition = th.Condition()
+            dpi_thread = th.Thread(target=dpi_routine, 
+                                   args=(args.interfaces, args.duration, args.period, 
+                                         captures, condition))
+            swi_thread = th.Thread(target=switch_routine, 
+                                   args=(args.flows, args.filter, captures, condition))
+            dpi_thread.start()
+            swi_thread.start()
+            swi_thread.join()
+            dpi_thread.join()
+    else:
+        print("Run the script as root")
 
 if __name__ == "__main__":
     main()
