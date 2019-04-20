@@ -11,14 +11,29 @@ from time import sleep
 
 
 # Regex for IPv4
-rxp_ip = r'\b((?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.' + \
-         r'(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.' + \
-         r'(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.' + \
-         r'(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?))\b'
+rxp_ipv4 = r'(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}' +\
+           r'(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)'
+# Regex for IPv6
+rxp_ipv6 = r'(?:(?:(?:[0-9A-Fa-f]{1,4}:){6}' +\
+           r'|::(?:[0-9A-Fa-f]{1,4}:){5}' +\
+           r'|(?:[0-9A-Fa-f]{1,4})?::(?:[0-9A-Fa-f]{1,4}:){4}' +\
+           r'|(?:(?:[0-9A-Fa-f]{1,4}:){0,1}[0-9A-Fa-f]{1,4})?::(?:[0-9A-Fa-f]{1,4}:){3}' +\
+           r'|(?:(?:[0-9A-Fa-f]{1,4}:){0,2}[0-9A-Fa-f]{1,4})?::(?:[0-9A-Fa-f]{1,4}:){2}' +\
+           r'|(?:(?:[0-9A-Fa-f]{1,4}:){0,3}[0-9A-Fa-f]{1,4})?::[0-9A-Fa-f]{1,4}:' +\
+           r'|(?:(?:[0-9A-Fa-f]{1,4}:){0,4}[0-9A-Fa-f]{1,4})?::' +\
+           r')(?:[0-9A-Fa-f]{1,4}:[0-9A-Fa-f]{1,4}' +\
+           r'|(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}' +\
+           r'(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?))' +\
+           r'|(?:(?:[0-9A-Fa-f]{1,4}:){0,5}[0-9A-Fa-f]{1,4})?::[0-9A-Fa-f]{1,4}' +\
+           r'|(?:(?:[0-9A-Fa-f]{1,4}:){0,6}[0-9A-Fa-f]{1,4})?::)'
+# Reference: http://www.jmrware.com/articles/2009/uri_regexp/URI_regex.html
+
+# Regex covering both IPv4 and IPv6 
+rxp_ip = r"({}|{})".format(rxp_ipv4, rxp_ipv6)
 # Regex for protocol field of nDPI
 rxp_proto = r'\[proto: \d+(?:^$|(?:\.\d+)*)/(.*?)\]'
 # Full regex
-regex = rxp_ip + r'.*' + rxp_ip + r'.*' + rxp_proto
+regex = rxp_ip + r'.*?' + rxp_ip + r'.*?' + rxp_proto
 # Compile for efficiency
 regex = re.compile(regex)
 
@@ -106,39 +121,40 @@ def switch_routine(flows, filterIP, captures, condition):
 
 def regex_test():
     with open('outputv1.txt', 'r') as file:
-    text = file.read()
-    groups = re.findall(regex, text)
-    blockedIPs = []
-    flows = ["Github"]
-    for group in groups:
-        if (flows[0] in group[2]):
-            ip1 = ip.IPv4Address(group[0])
-            ip2 = ip.IPv4Address(group[1])
-            if ip1.is_global:
-                blockedIPs.append(ip1)
-            if ip2.is_global:
-                blockedIPs.append(ip2)
-    print(blockedIPs)
+        text = file.read()
+        groups = re.findall(regex, text)
+        blockedIPs = []
+        flows = ["Github"]
+        for group in groups:
+            print(group)
+            if (flows[0] in group[2]):
+                ip1 = ip.IPv4Address(group[0])
+                ip2 = ip.IPv4Address(group[1])
+                if ip1.is_global:
+                    blockedIPs.append(ip1)
+                if ip2.is_global:
+                    blockedIPs.append(ip2)
+        # print(blockedIPs)
 
 def main():
-    # regex_test() # tmp
-    uid = os.geteuid()
-    if (uid == 0):
-        args = arg_handler()
-        if args:
-            captures = []
-            condition = th.Condition()
-            dpi_thread = th.Thread(target=dpi_routine, 
-                                   args=(args.interfaces, args.duration, args.period, 
-                                         captures, condition))
-            swi_thread = th.Thread(target=switch_routine, 
-                                   args=(args.flows, args.filter, captures, condition))
-            dpi_thread.start()
-            swi_thread.start()
-            swi_thread.join()
-            dpi_thread.join()
-    else:
-        print("Run the script as root")
+    regex_test() # tmp
+    # uid = os.geteuid()
+    # if (uid == 0):
+    #     args = arg_handler()
+    #     if args:
+    #         captures = []
+    #         condition = th.Condition()
+    #         dpi_thread = th.Thread(target=dpi_routine, 
+    #                                args=(args.interfaces, args.duration, args.period, 
+    #                                      captures, condition))
+    #         swi_thread = th.Thread(target=switch_routine, 
+    #                                args=(args.flows, args.filter, captures, condition))
+    #         dpi_thread.start()
+    #         swi_thread.start()
+    #         swi_thread.join()
+    #         dpi_thread.join()
+    # else:
+    #     print("Run the script as root")
 
 
 if __name__ == "__main__":
