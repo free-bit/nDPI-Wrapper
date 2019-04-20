@@ -2,8 +2,10 @@
 
 # Standard library imports
 import argparse
+import os
 import subprocess
 import threading as th
+from time import sleep
 
 # Custom format for arg Help print
 class CustomFormatter(argparse.HelpFormatter):
@@ -53,23 +55,52 @@ def arg_handler():
                        metavar="TIME", type=int)
     
     args = parser.parse_args()
-    # Testing
+    # Checking args
     if args.help:
         parser.print_help()
-    if args.interfaces:
-        print(args.interfaces)
-    if args.flows:
-        print(args.flows)
-    if args.duration:
-        print(args.duration)
-    if args.period:
-        print(args.period)
+    
+    if args.interfaces and args.flows and args.duration and args.period:
+        return args
+    
+    return None
+
+# Runs ndpiReader as subproc for a certain duration periodically 
+def dpi_routine(interfaces, flows, duration, period, captures, condition):
+    interfaces = " ".join(interfaces)
+    command = "ndpiReader -v 1 -i {} -s {}".format(interfaces, duration)
+
+    while True: 
+        out = subprocess.run([command], shell=True, capture_output=True).stdout
+        captures.append(out.decode())
+        with condition:
+            condition.notify()
+        sleep(period)
+
+def switch_routine(captures, condition):
+    while True:
+        with condition:
+            condition.wait()
+        capture = captures.pop()
+        print(capture)
 
 def main():
-    arg_handler()
-
-    # 
-    # print(out.decode())
+    uid=os.geteuid()
+    if (uid == 0):
+        args = arg_handler()
+        if args:
+            captures = []
+            condition = th.Condition()
+            dpi_thread = th.Thread(target=dpi_routine, 
+                                   args=(args.interfaces, args.flows, args.duration, args.period, 
+                                         captures, condition))
+            swi_thread = th.Thread(target=switch_routine, 
+                                   args=(captures, condition))
+            dpi_thread.start()
+            swi_thread.start()
+            swi_thread.join()
+            dpi_thread.join()
+    else:
+        print("Run the script as root")
 
 
 if __name__ == "__main__":
