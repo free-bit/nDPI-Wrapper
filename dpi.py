@@ -9,6 +9,7 @@ import subprocess
 import threading as th
 from time import sleep
 
+# Lookup table generated from ndpiReader docs
 proto_lookup = {
     'unknown':  0,
     'ftp_control':  1,
@@ -282,8 +283,7 @@ regex = rxp_ip + r'.*?' + rxp_ip + r'.*?' + rxp_proto
 # Compile for efficiency
 regex = re.compile(regex)
 
-
-# Custom format for arg Help print
+# Custom format for argparse help print
 class CustomFormatter(argparse.HelpFormatter):
     def __init__(self,
                  prog,
@@ -309,34 +309,36 @@ class CustomFormatter(argparse.HelpFormatter):
                 parts[-1] += ' %s' % args_string
             return ', '.join(parts)
 
+def print_known_flows():
+    print("Flows known to nDPI:")
+    print("--------------------")
+    for (name, id) in proto_lookup.items():
+        print((str(id) + ":\t"), name)
+
 # Handles cmd args
 def arg_handler():
     parser = argparse.ArgumentParser(description='DPI on packets', 
                                      formatter_class=CustomFormatter, 
                                      add_help=False)
     parser.add_argument("-h", "--help", help="Help message", action="store_true")
+    parser.add_argument("-p", "--printflows", help="Print flows known to nDPI", default=False, action="store_true")
     parser.add_argument("--filter", help="Filter private IPs", default=False, action="store_true")
-
     group = parser.add_argument_group(title='required arguments')
-
     group.add_argument("-i", "--interfaces", help="Network interfaces", 
                        metavar=("I0", "I1"), nargs='+', type=str)
-
-    group.add_argument("-f", "--flows",  help="Flows to search", 
+    group.add_argument("-f", "--flows",  help="Flow names (known to nDPI) to search", 
                        metavar=("F1", "F2"), nargs='+', type=str)
-
     group.add_argument("-d", "--duration", help="Capture duration in seconds", 
                        metavar="TIME", type=int)
-
     group.add_argument("-t", "--period", help="Capture period in seconds", 
                        metavar="TIME", type=int)
-    
     args = parser.parse_args()
     
     # Checking args
     if args.help:
         parser.print_help()
-    
+    if args.printflows:
+        print_known_flows()
     if args.interfaces and args.flows and args.duration and args.period:
         # Convert flow names to nDPI IDs by using the lookup table
         flow_names = args.flows
@@ -348,25 +350,30 @@ def arg_handler():
     return None
 
 # Runs ndpiReader as subproc for a certain duration periodically 
-def dpi_routine(interfaces, duration, period, captures, condition):
+def dpi_routine(interfaces, duration, period, captures, condition): 
     interfaces = " ".join(interfaces)
     command = "ndpiReader -v 1 -i {} -s {}".format(interfaces, duration)
-
     while True: 
         out = subprocess.run([command], shell=True, capture_output=True).stdout
         captures.append(out.decode())
+        # Notify switch_routine when the capture output is ready
         with condition:
             condition.notify()
         sleep(period)
 
+# Parses the capture output and extracts ip addresses
 def parse_capture(capture, flows, filterIP):
+    # Keep only one instance of each IP in the set 
     blockedIPs = set()
     groups = re.findall(regex, capture)
+    # group -> (srcIP, dstIP, flowID)
     for group in groups:
         flowID = int(group[2])
+        # If detected flow is in flows to be banned
         if (flowID in flows):
-            ip1 = ip.IPv4Address(group[0])
-            ip2 = ip.IPv4Address(group[1])
+            ip1 = ip.ip_address(group[0])
+            ip2 = ip.ip_address(group[1])
+            # If private IP filtering is desired, only add global IPs to the set
             if filterIP:
                 if ip1.is_global:
                     blockedIPs.add(ip1)
@@ -377,7 +384,9 @@ def parse_capture(capture, flows, filterIP):
                 blockedIPs.add(ip2)
     return list(blockedIPs)
 
+# Obtain IP addresses associated with the specified flows.
 def switch_routine(flows, filterIP, captures, condition):
+    # Continuously wait and process capture outputs
     while True:
         with condition:
             condition.wait()
@@ -385,11 +394,29 @@ def switch_routine(flows, filterIP, captures, condition):
         ips = parse_capture(capture, flows, filterIP)
         print(ips)
         # TODO: switch table update to ban IPs
+'''
+usage: dpi.py [-h] [-p] [--filter] [-i I0 [I1 ...]] [-f F1 [F2 ...]] [-d TIME]
+              [-t TIME]
 
+DPI on packets
+
+optional arguments:
+  -h, --help                    Help message
+  -p, --printflows              Print flows known to nDPI
+  --filter                      Filter private IPs
+
+required arguments:
+  -i, --interfaces I0 [I1 ...]  Network interfaces
+  -f, --flows F1 [F2 ...]       Flow names (known to nDPI) to search
+  -d, --duration TIME           Capture duration in seconds
+  -t, --period TIME             Capture period in seconds
+'''
 def main():
+    # Check for root
     uid = os.geteuid()
     if (uid == 0):
         args = arg_handler()
+        # If required args provided run threads
         if args:
             captures = []
             condition = th.Condition()
