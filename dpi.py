@@ -217,7 +217,7 @@ proto_lookup = {
     'github':203,
     'bjnp':204,
     # 'free':205,
-    'ppstream':206,
+    # 'ppstream':206,
     'smpp':207,
     'dnscrypt':208,
     'tinc':209,
@@ -257,10 +257,10 @@ proto_lookup = {
 }
 
 # Regex for IPv4
-rxp_ipv4 = r'(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}' +\
+RXP_IPV4 = r'(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}' +\
            r'(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)'
 # Regex for IPv6
-rxp_ipv6 = r'(?:(?:(?:[0-9A-Fa-f]{1,4}:){6}' +\
+RXP_IPV6 = r'(?:(?:(?:[0-9A-Fa-f]{1,4}:){6}' +\
            r'|::(?:[0-9A-Fa-f]{1,4}:){5}' +\
            r'|(?:[0-9A-Fa-f]{1,4})?::(?:[0-9A-Fa-f]{1,4}:){4}' +\
            r'|(?:(?:[0-9A-Fa-f]{1,4}:){0,1}[0-9A-Fa-f]{1,4})?::(?:[0-9A-Fa-f]{1,4}:){3}' +\
@@ -275,13 +275,11 @@ rxp_ipv6 = r'(?:(?:(?:[0-9A-Fa-f]{1,4}:){6}' +\
 # Reference: http://www.jmrware.com/articles/2009/uri_regexp/URI_regex.html
 
 # Regex covering both IPv4 and IPv6 
-rxp_ip = r"({}|{})".format(rxp_ipv4, rxp_ipv6)
+RXP_IP = r"({}|{})".format(RXP_IPV4, RXP_IPV6)
 # Regex for protocol field of nDPI
-rxp_proto = r'(?:\[proto: (?:\d+\.)*?(\d+)?/(?:.*?)\])'
-# Full regex
-regex = rxp_ip + r'.*?' + rxp_ip + r'.*?' + rxp_proto
-# Compile for efficiency
-regex = re.compile(regex)
+RXP_PROTO = r'(?:\[proto: (?:\d+\.)*?(?:{})?/(?:.*?)\])'
+# Full regex will be generated after flows are mapped to IDs
+FULL_REGEX = None
 
 # Custom format for argparse help print
 class CustomFormatter(argparse.HelpFormatter):
@@ -317,6 +315,7 @@ def print_known_flows():
 
 # Handles cmd args
 def arg_handler():
+    global RXP_IP, RXP_PROTO, FULL_REGEX
     parser = argparse.ArgumentParser(description='DPI on packets', 
                                      formatter_class=CustomFormatter, 
                                      add_help=False)
@@ -340,12 +339,33 @@ def arg_handler():
     if args.printflows:
         print_known_flows()
     if args.interfaces and args.flows and args.duration and args.period:
-        # Convert flow names to nDPI IDs by using the lookup table
         flow_names = args.flows
         args.flows = []
+
+        # Convert flow names to nDPI IDs by using the lookup table
         for flow in flow_names:
-            args.flows.append(proto_lookup[flow.lower()])
-        return args
+            try:
+                args.flows.append(proto_lookup[flow.lower()])
+            except Exception as e:
+                print("Unknown protocol name:", e, "ignoring...")
+
+        # If at least one flow is found in the lookup proceed with
+        # generating the regex which capture IP addresses for specified flows
+        if args.flows:
+            # Regex for flowIDs
+            flow_exp = "{}"
+            for _ in range(len(args.flows)-1):
+                flow_exp += "|{}"
+            flow_exp = flow_exp.format(*args.flows)
+            
+            # Regex for the protocol part of nDPI (in the global scope)
+            RXP_PROTO = RXP_PROTO.format(flow_exp)
+            
+            # Full regex (in the global scope)
+            FULL_REGEX = RXP_IP + r'.*?' + RXP_IP + r'.*?' + RXP_PROTO
+            FULL_REGEX = re.compile(FULL_REGEX)
+
+            return args
     
     return None
 
@@ -363,28 +383,25 @@ def dpi_routine(interfaces, duration, period, captures, condition):
 
 # Parses the capture output and extracts ip addresses
 def parse_capture(capture, flows, filterIP):
+    global FULL_REGEX
     # Keep only one instance of each IP in the set 
     blockedIPs = set()
-    groups = re.findall(regex, capture)
-    # group -> (srcIP, dstIP, flowID)
-    for group in groups:
-        flowID = int(group[2])
-        # If detected flow is in flows to be banned
-        if (flowID in flows):
-            ip1 = ip.ip_address(group[0])
-            ip2 = ip.ip_address(group[1])
-            # If private IP filtering is desired, only add global IPs to the set
-            if filterIP:
-                if ip1.is_global:
-                    blockedIPs.add(ip1)
-                if ip2.is_global:
-                    blockedIPs.add(ip2)
-            else:
+    groups = re.findall(FULL_REGEX, capture)
+    for group in groups: # group -> (srcIP, dstIP)
+        ip1 = ip.ip_address(group[0])
+        ip2 = ip.ip_address(group[1])
+        # If private IP filtering is desired, only add global IPs to the set
+        if filterIP:
+            if ip1.is_global:
                 blockedIPs.add(ip1)
+            if ip2.is_global:
                 blockedIPs.add(ip2)
+        else:
+            blockedIPs.add(ip1)
+            blockedIPs.add(ip2)
     return list(blockedIPs)
 
-# Obtain IP addresses associated with the specified flows.
+# Obtain IP addresses associated with the specified flows
 def switch_routine(flows, filterIP, captures, condition):
     # Continuously wait and process capture outputs
     while True:
@@ -412,11 +429,11 @@ required arguments:
   -t, --period TIME             Capture period in seconds
 '''
 def main():
-    # Check for root
+    # Check for root privileges
     uid = os.geteuid()
     if (uid == 0):
         args = arg_handler()
-        # If required args provided run threads
+        # If required args provided, run threads
         if args:
             captures = []
             condition = th.Condition()
