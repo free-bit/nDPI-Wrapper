@@ -8,13 +8,6 @@ import subprocess
 import threading as th
 from time import sleep
 
-import grpc
-# Don't forget to add the directory where p4runtime_lib resides to PYTHONPATH.
-# It is at $HOME/tutorials/utils in the standart tutorial VM installation.
-import p4runtime_lib.bmv2
-from p4runtime_lib.switch import ShutdownAllSwitchConnections
-import p4runtime_lib.helper
-
 # Lookup table generated from ndpiReader docs
 proto_lookup = {
     'unknown':  0,
@@ -328,6 +321,8 @@ def arg_handler():
     parser.add_argument("-h", "--help", help="Help message", action="store_true")
     parser.add_argument("-p", "--printflows", help="Print flows known to nDPI", default=False, action="store_true")
     group = parser.add_argument_group(title='required arguments')
+    parser.add_argument('--bmv2_json', help='BMv2 JSON file from p4c',
+                        type=str, action="store", required=True)
     parser.add_argument('--p4info', help='p4info proto in text format from p4c',
                         type=str, action="store", required=True)
     group.add_argument("-i", "--interfaces", help="Network interfaces", 
@@ -399,7 +394,7 @@ def parse_capture(capture, flows):
     return list(blockedIPs)
 
 # Obtain IP addresses associated with the specified flows
-def switch_routine(flows, captures, condition, switch_connection, p4info_helper):
+def switch_routine(flows, captures, condition, bmv2_json, p4info):
     # Continuously wait and process capture outputs
     while True:
         with condition:
@@ -409,15 +404,7 @@ def switch_routine(flows, captures, condition, switch_connection, p4info_helper)
         print(ips)
 
         for pair in ips:
-            table_entry = p4info_helper.buildTableEntry(
-                table_name="ingress.blocklist",
-                match_fields={
-                    "hdr.ipv4.srcAddr": pair[0],
-                    "hdr.ipv4.dstAddr": pair[1]
-                },
-                action_name="ingress.my_drop",
-                )
-            switch_connection.WriteTableEntry(table_entry)
+            subprocess.run(['./blocklist_add.py', bmv2_json, p4info, pair[0], pair[1]])
 
 '''
 usage: dpi.py [-h] [-p] [-i I0 [I1 ...]] [-f F1 [F2 ...]] [-d TIME]
@@ -447,34 +434,13 @@ def main():
     if not args:
         return
 
-    # Instantiate a P4Runtime helper from the p4info file
-    p4info_helper = p4runtime_lib.helper.P4InfoHelper(p4info_file_path)
-
-    # Initiate switch connection.
-    # This code is adapted from p4lang/tutorials (https://github.com/p4lang/tutorials).
-    try:
-        # Create a switch connection object for the switch;
-        # this is backed by a P4Runtime gRPC connection.
-        # Also, dump all P4Runtime messages sent to switch to given txt file.
-        switch_connection = p4runtime_lib.bmv2.Bmv2SwitchConnection(
-            name='s1', # XXX: What does this name correspond to?
-            address='192.168.9.99:50051', # TODO: Parametrize the IP/port
-            device_id=0,
-            proto_dump_file='logs/s1-p4runtime-requests.txt')
-
-        switch_connection.MasterArbitrationUpdate()
-    except grpc.RpcError as e:
-        printGrpcError(e)
-        return
-
     captures = []
     condition = th.Condition()
     dpi_thread = th.Thread(target=dpi_routine,
                            args=(args.interfaces, args.duration, args.period,
                                  captures, condition))
     swi_thread = th.Thread(target=switch_routine,
-                           args=(args.flows, captures, condition,
-                                 switch_connection, p4info_helper))
+                           args=(args.flows, captures, condition, args.bmv2_json, args.p4info))
     dpi_thread.start()
     swi_thread.start()
     swi_thread.join()
