@@ -321,7 +321,6 @@ def arg_handler():
                                      add_help=False)
     parser.add_argument("-h", "--help", help="Help message", action="store_true")
     parser.add_argument("-p", "--printflows", help="Print flows known to nDPI", default=False, action="store_true")
-    parser.add_argument("--filter", help="Filter private IPs", default=False, action="store_true")
     group = parser.add_argument_group(title='required arguments')
     group.add_argument("-i", "--interfaces", help="Network interfaces", 
                        metavar=("I0", "I1"), nargs='+', type=str)
@@ -382,37 +381,30 @@ def dpi_routine(interfaces, duration, period, captures, condition):
         sleep(period)
 
 # Parses the capture output and extracts ip addresses
-def parse_capture(capture, flows, filterIP):
+def parse_capture(capture, flows):
     global FULL_REGEX
-    # Keep only one instance of each IP in the set 
+    # Keep only one instance of each (srcIP, dstIP) pair in the set 
     blockedIPs = set()
     groups = re.findall(FULL_REGEX, capture)
     for group in groups: # group -> (srcIP, dstIP)
         ip1 = ip.ip_address(group[0])
         ip2 = ip.ip_address(group[1])
-        # If private IP filtering is desired, only add global IPs to the set
-        if filterIP:
-            if ip1.is_global:
-                blockedIPs.add(ip1)
-            if ip2.is_global:
-                blockedIPs.add(ip2)
-        else:
-            blockedIPs.add(ip1)
-            blockedIPs.add(ip2)
+        blockedIPs.add(ip1)
+        blockedIPs.add(ip2)
     return list(blockedIPs)
 
 # Obtain IP addresses associated with the specified flows
-def switch_routine(flows, filterIP, captures, condition):
+def switch_routine(flows, captures, condition):
     # Continuously wait and process capture outputs
     while True:
         with condition:
             condition.wait()
         capture = captures.pop()
-        ips = parse_capture(capture, flows, filterIP)
+        ips = parse_capture(capture, flows)
         print(ips)
         # TODO: switch table update to ban IPs
 '''
-usage: dpi.py [-h] [-p] [--filter] [-i I0 [I1 ...]] [-f F1 [F2 ...]] [-d TIME]
+usage: dpi.py [-h] [-p] [-i I0 [I1 ...]] [-f F1 [F2 ...]] [-d TIME]
               [-t TIME]
 
 DPI on packets
@@ -420,7 +412,6 @@ DPI on packets
 optional arguments:
   -h, --help                    Help message
   -p, --printflows              Print flows known to nDPI
-  --filter                      Filter private IPs
 
 required arguments:
   -i, --interfaces I0 [I1 ...]  Network interfaces
@@ -441,7 +432,7 @@ def main():
                                    args=(args.interfaces, args.duration, args.period, 
                                          captures, condition))
             swi_thread = th.Thread(target=switch_routine, 
-                                   args=(args.flows, args.filter, captures, condition))
+                                   args=(args.flows, captures, condition))
             dpi_thread.start()
             swi_thread.start()
             swi_thread.join()
