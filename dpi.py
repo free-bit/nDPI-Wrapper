@@ -2,12 +2,18 @@
 
 # Standard library imports
 import argparse
-import ipaddress as ip
 import os
 import re
 import subprocess
 import threading as th
 from time import sleep
+
+import grpc
+# Don't forget to add the directory where p4runtime_lib resides to PYTHONPATH.
+# It is at $HOME/tutorials/utils in the standart tutorial VM installation.
+import p4runtime_lib.bmv2
+from p4runtime_lib.switch import ShutdownAllSwitchConnections
+import p4runtime_lib.helper
 
 # Lookup table generated from ndpiReader docs
 proto_lookup = {
@@ -321,6 +327,8 @@ def arg_handler():
                                      add_help=False)
     parser.add_argument("-h", "--help", help="Help message", action="store_true")
     parser.add_argument("-p", "--printflows", help="Print flows known to nDPI", default=False, action="store_true")
+    parser.add_argument('--p4info', help='p4info proto in text format from p4c',
+                        type=str, action="store", required=True)
     group = parser.add_argument_group(title='required arguments')
     group.add_argument("-i", "--interfaces", help="Network interfaces", 
                        metavar=("I0", "I1"), nargs='+', type=str)
@@ -387,14 +395,11 @@ def parse_capture(capture, flows):
     blockedIPs = set()
     groups = re.findall(FULL_REGEX, capture)
     for group in groups: # group -> (srcIP, dstIP)
-        ip1 = ip.ip_address(group[0])
-        ip2 = ip.ip_address(group[1])
-        blockedIPs.add(ip1)
-        blockedIPs.add(ip2)
+        blockedIPs.add((group[0], group[1]))
     return list(blockedIPs)
 
 # Obtain IP addresses associated with the specified flows
-def switch_routine(flows, captures, condition):
+def switch_routine(flows, captures, condition, switch_connection, p4info_helper):
     # Continuously wait and process capture outputs
     while True:
         with condition:
@@ -402,7 +407,18 @@ def switch_routine(flows, captures, condition):
         capture = captures.pop()
         ips = parse_capture(capture, flows)
         print(ips)
-        # TODO: switch table update to ban IPs
+
+        for pair in ips:
+            table_entry = p4info_helper.buildTableEntry(
+                table_name="ingress.blocklist",
+                match_fields={
+                    "hdr.ipv4.srcAddr": pair[0],
+                    "hdr.ipv4.dstAddr": pair[1]
+                },
+                action_name="ingress.my_drop",
+                )
+            switch_connection.WriteTableEntry(table_entry)
+
 '''
 usage: dpi.py [-h] [-p] [-i I0 [I1 ...]] [-f F1 [F2 ...]] [-d TIME]
               [-t TIME]
@@ -422,23 +438,47 @@ required arguments:
 def main():
     # Check for root privileges
     uid = os.geteuid()
-    if (uid == 0):
-        args = arg_handler()
-        # If required args provided, run threads
-        if args:
-            captures = []
-            condition = th.Condition()
-            dpi_thread = th.Thread(target=dpi_routine, 
-                                   args=(args.interfaces, args.duration, args.period, 
-                                         captures, condition))
-            swi_thread = th.Thread(target=switch_routine, 
-                                   args=(args.flows, captures, condition))
-            dpi_thread.start()
-            swi_thread.start()
-            swi_thread.join()
-            dpi_thread.join()
-    else:
+    if (uid != 0):
         print("Run the script as root")
+        return
+
+    # Check for args
+    args = arg_handler()
+    if not args:
+        return
+
+    # Instantiate a P4Runtime helper from the p4info file
+    p4info_helper = p4runtime_lib.helper.P4InfoHelper(p4info_file_path)
+
+    # Initiate switch connection.
+    # This code is adapted from p4lang/tutorials (https://github.com/p4lang/tutorials).
+    try:
+        # Create a switch connection object for the switch;
+        # this is backed by a P4Runtime gRPC connection.
+        # Also, dump all P4Runtime messages sent to switch to given txt file.
+        switch_connection = p4runtime_lib.bmv2.Bmv2SwitchConnection(
+            name='s1', # XXX: What does this name correspond to?
+            address='192.168.9.99:50051', # TODO: Parametrize the IP/port
+            device_id=0,
+            proto_dump_file='logs/s1-p4runtime-requests.txt')
+
+        switch_connection.MasterArbitrationUpdate()
+    except grpc.RpcError as e:
+        printGrpcError(e)
+        return
+
+    captures = []
+    condition = th.Condition()
+    dpi_thread = th.Thread(target=dpi_routine,
+                           args=(args.interfaces, args.duration, args.period,
+                                 captures, condition))
+    swi_thread = th.Thread(target=switch_routine,
+                           args=(args.flows, captures, condition,
+                                 switch_connection, p4info_helper))
+    dpi_thread.start()
+    swi_thread.start()
+    swi_thread.join()
+    dpi_thread.join()
 
 if __name__ == "__main__":
     main()
