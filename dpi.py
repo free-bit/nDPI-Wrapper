@@ -327,9 +327,9 @@ def arg_handler():
                                      add_help=False)
     parser.add_argument("-h", "--help", help="Help message", action="store_true")
     parser.add_argument("-p", "--printflows", help="Print flows known to nDPI", default=False, action="store_true")
+    group = parser.add_argument_group(title='required arguments')
     parser.add_argument('--p4info', help='p4info proto in text format from p4c',
                         type=str, action="store", required=True)
-    group = parser.add_argument_group(title='required arguments')
     group.add_argument("-i", "--interfaces", help="Network interfaces", 
                        metavar=("I0", "I1"), nargs='+', type=str)
     group.add_argument("-f", "--flows",  help="Flow names (known to nDPI) to search", 
