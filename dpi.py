@@ -2,7 +2,6 @@
 
 # Standard library imports
 import argparse
-import ipaddress as ip
 import os
 import re
 import subprocess
@@ -321,8 +320,11 @@ def arg_handler():
                                      add_help=False)
     parser.add_argument("-h", "--help", help="Help message", action="store_true")
     parser.add_argument("-p", "--printflows", help="Print flows known to nDPI", default=False, action="store_true")
-    parser.add_argument("--filter", help="Filter private IPs", default=False, action="store_true")
     group = parser.add_argument_group(title='required arguments')
+    parser.add_argument('--bmv2_json', help='BMv2 JSON file from p4c',
+                        type=str, action="store", required=True)
+    parser.add_argument('--p4info', help='p4info proto in text format from p4c',
+                        type=str, action="store", required=True)
     group.add_argument("-i", "--interfaces", help="Network interfaces", 
                        metavar=("I0", "I1"), nargs='+', type=str)
     group.add_argument("-f", "--flows",  help="Flow names (known to nDPI) to search", 
@@ -382,37 +384,30 @@ def dpi_routine(interfaces, duration, period, captures, condition):
         sleep(period)
 
 # Parses the capture output and extracts ip addresses
-def parse_capture(capture, flows, filterIP):
+def parse_capture(capture, flows):
     global FULL_REGEX
-    # Keep only one instance of each IP in the set 
+    # Keep only one instance of each (srcIP, dstIP) pair in the set 
     blockedIPs = set()
     groups = re.findall(FULL_REGEX, capture)
     for group in groups: # group -> (srcIP, dstIP)
-        ip1 = ip.ip_address(group[0])
-        ip2 = ip.ip_address(group[1])
-        # If private IP filtering is desired, only add global IPs to the set
-        if filterIP:
-            if ip1.is_global:
-                blockedIPs.add(ip1)
-            if ip2.is_global:
-                blockedIPs.add(ip2)
-        else:
-            blockedIPs.add(ip1)
-            blockedIPs.add(ip2)
+        blockedIPs.add((group[0], group[1]))
     return list(blockedIPs)
 
 # Obtain IP addresses associated with the specified flows
-def switch_routine(flows, filterIP, captures, condition):
+def switch_routine(flows, captures, condition, bmv2_json, p4info):
     # Continuously wait and process capture outputs
     while True:
         with condition:
             condition.wait()
         capture = captures.pop()
-        ips = parse_capture(capture, flows, filterIP)
+        ips = parse_capture(capture, flows)
         print(ips)
-        # TODO: switch table update to ban IPs
+
+        for pair in ips:
+            subprocess.run(['./blocklist_add.py', bmv2_json, p4info, pair[0], pair[1]])
+
 '''
-usage: dpi.py [-h] [-p] [--filter] [-i I0 [I1 ...]] [-f F1 [F2 ...]] [-d TIME]
+usage: dpi.py [-h] [-p] [-i I0 [I1 ...]] [-f F1 [F2 ...]] [-d TIME]
               [-t TIME]
 
 DPI on packets
@@ -420,7 +415,6 @@ DPI on packets
 optional arguments:
   -h, --help                    Help message
   -p, --printflows              Print flows known to nDPI
-  --filter                      Filter private IPs
 
 required arguments:
   -i, --interfaces I0 [I1 ...]  Network interfaces
@@ -431,23 +425,26 @@ required arguments:
 def main():
     # Check for root privileges
     uid = os.geteuid()
-    if (uid == 0):
-        args = arg_handler()
-        # If required args provided, run threads
-        if args:
-            captures = []
-            condition = th.Condition()
-            dpi_thread = th.Thread(target=dpi_routine, 
-                                   args=(args.interfaces, args.duration, args.period, 
-                                         captures, condition))
-            swi_thread = th.Thread(target=switch_routine, 
-                                   args=(args.flows, args.filter, captures, condition))
-            dpi_thread.start()
-            swi_thread.start()
-            swi_thread.join()
-            dpi_thread.join()
-    else:
+    if (uid != 0):
         print("Run the script as root")
+        return
+
+    # Check for args
+    args = arg_handler()
+    if not args:
+        return
+
+    captures = []
+    condition = th.Condition()
+    dpi_thread = th.Thread(target=dpi_routine,
+                           args=(args.interfaces, args.duration, args.period,
+                                 captures, condition))
+    swi_thread = th.Thread(target=switch_routine,
+                           args=(args.flows, captures, condition, args.bmv2_json, args.p4info))
+    dpi_thread.start()
+    swi_thread.start()
+    swi_thread.join()
+    dpi_thread.join()
 
 if __name__ == "__main__":
     main()
