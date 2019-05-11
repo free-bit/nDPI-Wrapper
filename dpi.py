@@ -395,6 +395,9 @@ def parse_capture(capture, flows):
 
 # Obtain IP addresses associated with the specified flows
 def switch_routine(flows, captures, condition, bmv2_json, p4info):
+    # Set the forwarding pipeline config
+    # This also clears all tables
+    subprocess.run(['./set_pipeline_conf.py', bmv2_json, p4info])
     # Continuously wait and process capture outputs
     while True:
         with condition:
