@@ -276,7 +276,7 @@ RXP_IPV6 = r'(?:(?:(?:[0-9A-Fa-f]{1,4}:){6}' +\
 # Regex covering both IPv4 and IPv6 
 RXP_IP = r"({}|{})".format(RXP_IPV4, RXP_IPV6)
 # Regex for protocol field of nDPI
-RXP_PROTO = r'(?:\[proto: (?:\d+\.)*?(?:{})?/(?:.*?)\])'
+RXP_PROTO = r'(?:\[proto: (?:\d+\.)*?(?:{})?/(?!DNS)(?:.*?)\])'
 # Full regex will be generated after flows are mapped to IDs
 FULL_REGEX = None
 
