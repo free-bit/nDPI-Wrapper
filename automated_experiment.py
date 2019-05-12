@@ -66,7 +66,7 @@ def main():
 
     results = []
     random.seed(35)
-    
+
     for i in range(0, args.trials):
         try:
             retv = send_req()
@@ -86,6 +86,7 @@ def main():
     print('Experiments done! The results is as follows:')
     print(f'Number of successful queries: {succ_count}')
     print(f'Number of failed queries: {fail_count}')
+    
     
 
 if __name__ == "__main__":
