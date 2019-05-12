@@ -37,19 +37,11 @@ def main(argv):
 
         switch_connection.MasterArbitrationUpdate()
 
+        switch_connection.SetForwardingPipelineConfig(p4info=p4info_helper.p4info,
+                                       bmv2_json_file_path=argv[1])
     except grpc.RpcError as e:
         printGrpcError(e)
         return
-
-    table_entry = p4info_helper.buildTableEntry(
-        table_name="ingress.blocklist",
-        match_fields={
-            "hdr.ipv4.srcAddr": argv[3],
-            "hdr.ipv4.dstAddr": argv[4]
-        },
-        action_name="my_drop",
-        )
-    switch_connection.WriteTableEntry(table_entry)
 
 if __name__ == "__main__":
     main(sys.argv)
